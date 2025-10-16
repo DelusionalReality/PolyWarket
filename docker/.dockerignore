@@ -1,0 +1,18 @@
+# Don't include these in Docker image
+venv/
+__pycache__/
+tests/
+*.pyc
+*.pyo
+*.log
+large_trades.json
+*.md
+.git/
+.gitignore
+setup.sh
+run.sh
+.env
+env.example
+logs/
+data/
+

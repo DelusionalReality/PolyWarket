@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  polymarket-monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: polymarket-monitor
+    restart: unless-stopped
+
+    # Environment variables for configuration
+    # You can also use a .env file (copy env.example to .env)
+    environment:
+      - TRADE_THRESHOLD=${TRADE_THRESHOLD:-5000}
+      - POLL_INTERVAL=${POLL_INTERVAL:-30}
+
+    # Mount volumes to persist logs and data on host
+    volumes:
+      - ../logs:/app/logs
+      - ../data:/app/data
+
+    # Uncomment to limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
+
+    # Health check to ensure API is accessible
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import requests; requests.get('https://data-api.polymarket.com/trades', timeout=5)",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
