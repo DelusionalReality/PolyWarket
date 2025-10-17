@@ -1,27 +1,31 @@
 # Polymarket Trade Monitor
 
-A Python script that monitors large trades on Polymarket and analyzes trader history in real-time.
+A Python script that monitors and categorizes significant trades on Polymarket, with separate tracking for whale trades, tuna trades, and unusual trader activity.
 
 ## Features
 
 - 🔍 **Real-time Monitoring**: Continuously monitors Polymarket for new trades (default: every 30 seconds)
-- 💰 **Large Trade Detection**: Filters and logs trades over $5,000 (configurable threshold)
+- 💰 **Multi-Category Trade Detection**: 
+  - **Main Trades**: All trades over $5,000 (configurable threshold)
+  - **Tuna Trades**: Mid-tier trades between $5,000 and $100,000
+  - **Whale Trades**: High-value trades over $100,000
+  - **Unusual Trades**: Trades from wallets with < 10 previous trades
 - 📊 **Detailed Market Information**: 
   - Market title and description
   - Market ID (condition ID) for tracking
   - Market category (e.g., "US-current-affairs", "crypto")
   - Market tags (when available)
   - Market slug and event slug for URL construction
-- 👤 **Trader Analysis**: For each large trade, automatically analyzes the complete trader history:
+- 👤 **Trader Analysis**: For each qualifying trade, automatically analyzes the complete trader history:
   - Username and pseudonym
   - Total number of historical trades on Polymarket
   - Total volume traded across all markets
   - Number of unique markets traded
   - First and latest trade timestamps
-- 📝 **Comprehensive Logging**: 
-  - Human-readable logs to console and file (`polymarket_trades.log`)
-  - Machine-readable JSON output (`large_trades.json`)
-  - Logs when no large trades are found in each polling cycle
+- 📝 **Comprehensive Multi-Log System**: 
+  - Human-readable logs to console and separate category files
+  - Machine-readable JSON output for each category
+  - Automatic cross-logging to multiple categories when applicable
 
 ## Installation
 
@@ -117,16 +121,33 @@ monitor = PolymarketMonitor(
 
 ### Output Files
 
-- `polymarket_trades.log` - Human-readable log with detailed trade and trader information
-- `large_trades.json` - JSON-formatted log for programmatic access
+The monitor creates separate log and data files for each trade category:
+
+**Log Files** (in `logs/` directory):
+- `polymarket_trades.log` - Main log containing all qualifying trades
+- `tuna_trades.log` - Mid-tier trades ($5K-$100K)
+- `whale_trades.log` - High-value trades ($100K+)
+- `unusual_trades.log` - Trades from inexperienced traders (< 10 previous trades)
+
+**Data Files** (in `data/` directory):
+- `trades.json` - JSON-formatted log of all trades
+- `tuna_trades.json` - JSON data for tuna trades
+- `whale_trades.json` - JSON data for whale trades
+- `unusual_trades.json` - JSON data for unusual trader activity
+
+**Note**: Trades can appear in multiple logs. For example, a $150,000 trade from a wallet with 5 previous trades will be logged in:
+- `polymarket_trades.log` (main log)
+- `whale_trades.log` (value category)
+- `unusual_trades.log` (trader experience category)
 
 ## Example Output
 
-### When a large trade is detected:
+### When a trade is detected:
 
+**Example 1: Whale Trade from Experienced Trader**
 ```
 ================================================================================
-LARGE TRADE DETECTED: $7,500.00
+TRADE DETECTED: $125,000.00 [WHALE]
 ================================================================================
 Trade Details:
   - Transaction Hash: 0xabc123...
@@ -138,7 +159,7 @@ Trade Details:
   - Tags: politics, election, 2024
   - Outcome: Yes
   - Side: BUY
-  - Size: 10000 tokens
+  - Size: 166667 tokens
   - Price: $0.75
   - Timestamp: 1729123456
 
@@ -146,17 +167,38 @@ Trader Information:
   - Wallet: 0x1234567890abcdef...
   - Username: crypto_trader_pro (Mighty-Whale)
   - Total Historical Trades: 247
-  - Total Volume Traded: $456,789.50
+  - Total Volume Traded: $1,456,789.50
   - Markets Traded: 42
   - First Trade: 1724567890
   - Latest Trade: 1729123456
 ================================================================================
 ```
 
-### When no large trades are found:
+**Example 2: Tuna Trade from New Trader**
+```
+================================================================================
+TRADE DETECTED: $8,500.00 [TUNA + UNUSUAL]
+================================================================================
+Trade Details:
+  - Transaction Hash: 0xdef456...
+  - Market: Bitcoin to reach $100k by end of 2024?
+  - Category: crypto
+  - ...
+
+Trader Information:
+  - Wallet: 0xabcdefgh...
+  - Username: newbie_trader
+  - Total Historical Trades: 6
+  - Total Volume Traded: $24,500.00
+  - Markets Traded: 3
+  - ...
+================================================================================
+```
+
+### When no qualifying trades are found:
 
 ```
-2025-10-16 18:15:30,123 - INFO - No transactions over $5,000.00 found in this batch
+2025-10-17 18:15:30,123 - INFO - No transactions over $5,000.00 found in this batch
 ```
 
 ## API Information
@@ -171,20 +213,37 @@ This script uses the Polymarket public APIs:
 
 ## Configuration
 
-Key parameters you can adjust:
+Key parameters you can adjust via environment variables:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `threshold` | 5000 | Minimum trade value in USD to log |
-| `poll_interval` | 30 | Seconds between API checks |
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `TRADE_THRESHOLD` | 5000 | Minimum trade value in USD to log |
+| `POLL_INTERVAL` | 30 | Seconds between API checks |
+| `TUNA_MIN` | 5000 | Minimum value for tuna trade classification |
+| `TUNA_MAX` | 100000 | Maximum value for tuna trade classification (exclusive) |
+| `WHALE_MIN` | 100000 | Minimum value for whale trade classification |
+| `UNUSUAL_TRADER_THRESHOLD` | 10 | Maximum previous trades for unusual classification |
+
+**Docker Setup:**
+Copy `docker/env.example` to `docker/.env` and adjust values as needed.
+
+**Non-Docker Setup:**
+Export environment variables before running:
+```bash
+export TUNA_MIN=10000
+export WHALE_MIN=200000
+./scripts/run.sh
+```
 
 ## Notes
 
-- The script maintains a set of seen transaction hashes to avoid duplicate logging
+- **Multi-Category Logging**: Trades are automatically logged to all applicable categories (e.g., a $150K trade from a new trader appears in main, whale, and unusual logs)
+- The script maintains a set of seen transaction hashes to avoid duplicate logging within categories
 - API requests are rate-limited by the polling interval
 - Trade value is calculated as `size × price` where size is in tokens and price is the token price
 - Market details are cached to reduce API calls and improve performance
 - Timestamps are in Unix epoch format (seconds since January 1, 1970)
+- Directories for logs and data are created automatically if they don't exist
 
 ## Stopping the Monitor
 

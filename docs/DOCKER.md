@@ -58,10 +58,16 @@ polyWarket/
 │   └── .env                   # Your configuration (create this)
 │
 ├── logs/                       # Mounted volume for logs
-│   └── polymarket_trades.log
+│   ├── polymarket_trades.log   # Main log (all trades)
+│   ├── tuna_trades.log         # Mid-tier trades ($5K-$100K)
+│   ├── whale_trades.log        # High-value trades ($100K+)
+│   └── unusual_trades.log      # New/inexperienced traders
 │
 └── data/                       # Mounted volume for JSON data
-    └── large_trades.json
+    ├── trades.json             # Main data (all trades)
+    ├── tuna_trades.json        # Tuna trade data
+    ├── whale_trades.json       # Whale trade data
+    └── unusual_trades.json     # Unusual trader data
 ```
 
 ## 🔧 Configuration
@@ -99,17 +105,26 @@ docker-compose logs -f -t
 
 ### Log Files
 
-Even with the container stopped, logs are available:
+Even with the container stopped, logs are available on your host machine:
 
 ```bash
-# View text log
+# View main logs (all trades)
 cat logs/polymarket_trades.log
+cat data/trades.json
 
-# View JSON data
-cat data/large_trades.json
+# View category-specific logs
+cat logs/tuna_trades.log          # Mid-tier trades
+cat logs/whale_trades.log         # High-value trades
+cat logs/unusual_trades.log       # New/inexperienced traders
 
-# Watch log in real-time
-tail -f logs/polymarket_trades.log
+# View category-specific JSON data
+cat data/tuna_trades.json
+cat data/whale_trades.json
+cat data/unusual_trades.json
+
+# Watch logs in real-time
+tail -f logs/polymarket_trades.log     # Main log
+tail -f logs/whale_trades.log          # Whale trades only
 ```
 
 ## 🔄 Management Commands

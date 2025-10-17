@@ -37,10 +37,16 @@ polyWarket/
 │   └── check_tags.py              # Tags availability checker
 │
 ├── 📊 logs/                       # Generated Logs (gitignored)
-│   └── polymarket_trades.log      # Human-readable logs
+│   ├── polymarket_trades.log      # Main log (all trades)
+│   ├── tuna_trades.log            # Mid-tier trades ($5K-$100K)
+│   ├── whale_trades.log           # High-value trades ($100K+)
+│   └── unusual_trades.log         # New/inexperienced traders
 │
 ├── 📦 data/                       # Generated Data (gitignored)
-│   └── large_trades.json          # JSON formatted data
+│   ├── trades.json                # Main JSON data (all trades)
+│   ├── tuna_trades.json           # Tuna trade data
+│   ├── whale_trades.json          # Whale trade data
+│   └── unusual_trades.json        # Unusual trader data
 │
 └── 🐍 venv/                       # Python Virtual Env (gitignored)
 
@@ -152,11 +158,15 @@ All test and debug scripts have been organized into the `tests/` directory:
 
 ## 🎯 Features
 
-### Trade Detection
+### Trade Detection & Categorization
 - ✅ Real-time monitoring (configurable interval)
-- ✅ Threshold-based filtering ($5,000 default)
+- ✅ Multi-category trade classification:
+  - Main trades: $5,000+ (configurable threshold)
+  - Tuna trades: $5K-$100K
+  - Whale trades: $100K+
+  - Unusual trades: From traders with < 10 previous trades
 - ✅ Duplicate detection via transaction hash tracking
-- ✅ Logs when no large trades found
+- ✅ Logs when no qualifying trades found
 
 ### Market Information
 - ✅ Market title and description
@@ -173,9 +183,19 @@ All test and debug scripts have been organized into the `tests/` directory:
 - ✅ First and latest trade timestamps
 
 ### Logging & Output
+- ✅ Multi-log system with separate files per category
 - ✅ Console output with color/formatting
-- ✅ File logging (`polymarket_trades.log`)
-- ✅ JSON export (`large_trades.json`)
+- ✅ Human-readable logs:
+  - `polymarket_trades.log` - Main log (all trades)
+  - `tuna_trades.log` - Mid-tier trades
+  - `whale_trades.log` - High-value trades
+  - `unusual_trades.log` - New/inexperienced traders
+- ✅ JSON exports for each category:
+  - `trades.json` - All trades
+  - `tuna_trades.json` - Tuna trades only
+  - `whale_trades.json` - Whale trades only
+  - `unusual_trades.json` - Unusual trades only
+- ✅ Cross-category logging (trades appear in all applicable logs)
 - ✅ Configurable log levels
 
 ## 🔧 Configuration
@@ -230,7 +250,7 @@ python polymarket_monitor.py
 ### Console/Log Output
 ```
 ================================================================================
-LARGE TRADE DETECTED: $7,500.00
+TRADE DETECTED: $7,500.00 [TUNA]
 ================================================================================
 Trade Details:
   - Market: Will Trump win the 2024 Presidential Election?
@@ -241,10 +261,23 @@ Trade Details:
   ...
 ```
 
+**Example with multiple categories:**
+```
+================================================================================
+TRADE DETECTED: $125,000.00 [WHALE + UNUSUAL]
+================================================================================
+...
+```
+
 ### JSON Output
 ```json
 {
-  "timestamp": "2025-10-16T18:15:30.123456",
+  "timestamp": "2025-10-17T18:15:30.123456",
+  "categories": {
+    "is_unusual": false,
+    "is_tuna": true,
+    "is_whale": false
+  },
   "trade": {
     "value": 7500.00,
     "market_title": "Will Trump win...",

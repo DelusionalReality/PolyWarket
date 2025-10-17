@@ -116,6 +116,84 @@ See `REORGANIZATION_PLAN.md` for detailed rationale and migration notes.
 
 ---
 
+## [Multi-Category Trade Tracking] - 2025-10-17
+
+### 🎯 Enhanced Trade Categorization System
+
+Implemented a comprehensive multi-category trade tracking system with separate logs and data files for different trade types.
+
+### 📊 New Trade Categories
+
+**1. Main Trades Log** (`polymarket_trades.log` / `trades.json`)
+- Logs ALL trades that meet any criteria ($5,000+)
+- Central log for all qualifying trades
+- Replaces previous "large trades" terminology
+
+**2. Unusual Trades** (`unusual_trades.log` / `unusual_trades.json`)
+- Trades from wallets with < 10 previous trades
+- Identifies new or inexperienced traders making significant moves
+- Also logged in main log and appropriate size category (tuna/whale)
+
+**3. Tuna Trades** (`tuna_trades.log` / `tuna_trades.json`)
+- Trades between $5,000 and $100,000
+- Mid-tier significant trades
+- Also logged in main log
+
+**4. Whale Trades** (`whale_trades.log` / `whale_trades.json`)
+- Trades $100,000 and above
+- High-value, market-moving trades
+- Also logged in main log
+
+### ✨ Key Features
+
+- **Multi-Log System**: Each trade is logged to multiple files based on its characteristics
+- **Category Labels**: Log entries clearly show trade categories (e.g., `[WHALE + UNUSUAL]`)
+- **Separate JSON Files**: Independent data files for each category for easy analysis
+- **Automatic Directory Creation**: Logs and data directories created automatically
+- **Enhanced Startup Info**: Monitor displays all thresholds on startup
+
+### 🔧 Technical Changes
+
+- Renamed `log_large_trade()` → `log_trade()`
+- Added separate loggers for each category (unusual, tuna, whale)
+- Updated terminology from "Large Trade" to "Trade"
+- Added `categories` field to JSON output with boolean flags
+- Added configurable thresholds via environment variables:
+  - `TUNA_MIN` (default: 5000)
+  - `TUNA_MAX` (default: 100000)
+  - `WHALE_MIN` (default: 100000)
+  - `UNUSUAL_TRADER_THRESHOLD` (default: 10)
+- Updated `docker/env.example` with new configuration options
+
+### 📁 New Files Created
+
+**Log Files** (in `logs/` or `/app/logs`):
+- `polymarket_trades.log` - Main log
+- `unusual_trades.log` - Unusual trader activity
+- `tuna_trades.log` - Mid-tier trades
+- `whale_trades.log` - High-value trades
+
+**Data Files** (in `data/` or `/app/data`):
+- `trades.json` - Main data
+- `unusual_trades.json` - Unusual trader data
+- `tuna_trades.json` - Tuna trade data
+- `whale_trades.json` - Whale trade data
+
+### 📝 Example Output
+
+```
+================================================================================
+TRADE DETECTED: $125,000.00 [WHALE + UNUSUAL]
+================================================================================
+Trade Details:
+  - Transaction Hash: 0x...
+  - Market: Will Donald Trump win the 2024 election?
+  - Total Historical Trades: 8
+  - ...
+```
+
+---
+
 ## Previous Updates
 
 ### [Initial Release]
@@ -126,4 +204,3 @@ See `REORGANIZATION_PLAN.md` for detailed rationale and migration notes.
 - JSON and text logging
 - Docker support
 - Environment-based configuration
-

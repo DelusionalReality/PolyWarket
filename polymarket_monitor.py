@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Polymarket Trade Monitor
-Monitors large trades (>$5000) on Polymarket and analyzes trader history
+Monitors trades on Polymarket and categorizes them by size and trader experience
 """
 
 import requests
@@ -14,18 +14,47 @@ import logging
 
 # Configure logging
 # Check if running in Docker (data directory exists)
-log_file = '/app/logs/polymarket_trades.log' if os.path.exists('/app/logs') else 'polymarket_trades.log'
+logs_dir = '/app/logs' if os.path.exists('/app/logs') else 'logs'
+os.makedirs(logs_dir, exist_ok=True)
 
+# Create separate log files for each category
+log_files = {
+    'main': os.path.join(logs_dir, 'polymarket_trades.log'),
+    'unusual': os.path.join(logs_dir, 'unusual_trades.log'),
+    'tuna': os.path.join(logs_dir, 'tuna_trades.log'),
+    'whale': os.path.join(logs_dir, 'whale_trades.log')
+}
+
+# Configure main logger
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file),
+        logging.FileHandler(log_files['main']),
         logging.StreamHandler()
     ]
 )
 
 logger = logging.getLogger(__name__)
+
+# Create separate loggers for each category
+unusual_logger = logging.getLogger('unusual_trades')
+unusual_logger.setLevel(logging.INFO)
+unusual_handler = logging.FileHandler(log_files['unusual'])
+unusual_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+unusual_logger.addHandler(unusual_handler)
+
+tuna_logger = logging.getLogger('tuna_trades')
+tuna_logger.setLevel(logging.INFO)
+tuna_handler = logging.FileHandler(log_files['tuna'])
+tuna_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+tuna_logger.addHandler(tuna_handler)
+
+whale_logger = logging.getLogger('whale_trades')
+whale_logger.setLevel(logging.INFO)
+whale_handler = logging.FileHandler(log_files['whale'])
+whale_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+whale_logger.addHandler(whale_handler)
 
 
 class PolymarketMonitor:
@@ -33,7 +62,6 @@ class PolymarketMonitor:
     
     BASE_URL = "https://data-api.polymarket.com"
     GAMMA_API_URL = "https://gamma-api.polymarket.com"
-    TRADE_THRESHOLD = 5000  # USD threshold for logging trades
     
     def __init__(self, threshold: float = 5000, poll_interval: int = 30):
         """
@@ -47,6 +75,16 @@ class PolymarketMonitor:
         self.poll_interval = poll_interval
         self.seen_transactions = set()
         self.market_cache = {}  # Cache market details by condition ID
+        
+        # Trade category thresholds (configurable via environment variables)
+        self.TUNA_MIN = float(os.getenv('TUNA_MIN', '5000'))
+        self.TUNA_MAX = float(os.getenv('TUNA_MAX', '100000'))
+        self.WHALE_MIN = float(os.getenv('WHALE_MIN', '100000'))
+        self.UNUSUAL_TRADER_THRESHOLD = int(os.getenv('UNUSUAL_TRADER_THRESHOLD', '10'))
+        
+        # Create data directory for JSON files
+        self.data_dir = '/app/data' if os.path.exists('/app/data') else 'data'
+        os.makedirs(self.data_dir, exist_ok=True)
         
     def get_recent_trades(self, limit: int = 100) -> List[Dict]:
         """
@@ -80,12 +118,12 @@ class PolymarketMonitor:
             wallet_address: The user's proxy wallet address
             
         Returns:
-            List of all trades by this user
+            List of all trades by this user (max 500 due to API limit)
         """
         url = f"{self.BASE_URL}/trades"
         params = {
             'user': wallet_address,
-            'limit': 10000  # Get maximum possible trades
+            'limit': 500  # API maximum per request
         }
         
         try:
@@ -167,7 +205,8 @@ class PolymarketMonitor:
                 'wallet': wallet_address,
                 'total_trades': 0,
                 'total_volume': 0,
-                'markets_traded': 0
+                'markets_traded': 0,
+                'has_more_trades': False
             }
         
         total_volume = sum(self.calculate_trade_value(t) for t in trades)
@@ -178,6 +217,10 @@ class PolymarketMonitor:
         username = trades[0].get('name', 'Anonymous')
         pseudonym = trades[0].get('pseudonym', '')
         
+        # Check if trader likely has more than 500 trades
+        # If we got exactly 500 trades, there are probably more
+        has_more_trades = len(trades) >= 500
+        
         return {
             'wallet': wallet_address,
             'username': username,
@@ -186,18 +229,24 @@ class PolymarketMonitor:
             'total_volume': round(total_volume, 2),
             'markets_traded': len(unique_markets),
             'first_trade': trades[-1].get('timestamp', 'Unknown') if trades else 'Unknown',
-            'latest_trade': trades[0].get('timestamp', 'Unknown') if trades else 'Unknown'
+            'latest_trade': trades[0].get('timestamp', 'Unknown') if trades else 'Unknown',
+            'has_more_trades': has_more_trades
         }
     
-    def log_large_trade(self, trade: Dict, trader_stats: Dict):
+    def log_trade(self, trade: Dict, trader_stats: Dict):
         """
-        Log details about a large trade and trader history
+        Log details about a trade and trader history to appropriate logs
         
         Args:
             trade: Trade dictionary
             trader_stats: Trader statistics dictionary
         """
         trade_value = self.calculate_trade_value(trade)
+        
+        # Determine trade categories
+        is_unusual = trader_stats['total_trades'] < self.UNUSUAL_TRADER_THRESHOLD
+        is_tuna = self.TUNA_MIN <= trade_value < self.TUNA_MAX
+        is_whale = trade_value >= self.WHALE_MIN
         
         # Extract fields from top-level trade object
         market_title = trade.get('title', 'Unknown Market')
@@ -225,9 +274,24 @@ class PolymarketMonitor:
         # Build tags display
         tags_display = ', '.join(market_tags) if market_tags else 'None'
         
+        # Format trade count with "500+" indicator if applicable
+        trade_count = trader_stats['total_trades']
+        has_more = trader_stats.get('has_more_trades', False)
+        trade_count_display = f"{trade_count}+" if has_more else str(trade_count)
+        
+        # Build category labels
+        categories = []
+        if is_whale:
+            categories.append("WHALE")
+        elif is_tuna:
+            categories.append("TUNA")
+        if is_unusual:
+            categories.append("UNUSUAL")
+        category_label = " + ".join(categories) if categories else "TRADE"
+        
         log_message = f"""
 {'='*80}
-LARGE TRADE DETECTED: ${trade_value:,.2f}
+TRADE DETECTED: ${trade_value:,.2f} [{category_label}]
 {'='*80}
 Trade Details:
   - Transaction Hash: {trade.get('transactionHash', 'N/A')}
@@ -246,7 +310,7 @@ Trade Details:
 Trader Information:
   - Wallet: {trader_stats['wallet']}
   - Username: {trader_display}
-  - Total Historical Trades: {trader_stats['total_trades']}
+  - Total Historical Trades: {trade_count_display}
   - Total Volume Traded: ${trader_stats['total_volume']:,.2f}
   - Markets Traded: {trader_stats['markets_traded']}
   - First Trade: {trader_stats.get('first_trade', 'N/A')}
@@ -254,11 +318,25 @@ Trader Information:
 {'='*80}
         """
         
+        # Log to main trades log (always)
         logger.info(log_message)
+        
+        # Log to category-specific logs
+        if is_unusual:
+            unusual_logger.info(log_message)
+        if is_tuna:
+            tuna_logger.info(log_message)
+        if is_whale:
+            whale_logger.info(log_message)
         
         # Also save to JSON for easier parsing
         trade_data = {
             'timestamp': datetime.now().isoformat(),
+            'categories': {
+                'is_unusual': is_unusual,
+                'is_tuna': is_tuna,
+                'is_whale': is_whale
+            },
             'trade': {
                 'value': trade_value,
                 'transaction_hash': trade.get('transactionHash'),
@@ -278,24 +356,31 @@ Trader Information:
             'trader': trader_stats
         }
         
-        # Append to JSON log file
-        # Use data directory if running in Docker
-        json_file = '/app/data/large_trades.json' if os.path.exists('/app/data') else 'large_trades.json'
+        # Save to appropriate JSON files
+        json_files = [os.path.join(self.data_dir, 'trades.json')]  # Always save to main trades file
         
-        try:
-            with open(json_file, 'a') as f:
-                f.write(json.dumps(trade_data) + '\n')
-        except Exception as e:
-            logger.error(f"Error writing to JSON log: {e}")
+        if is_unusual:
+            json_files.append(os.path.join(self.data_dir, 'unusual_trades.json'))
+        if is_tuna:
+            json_files.append(os.path.join(self.data_dir, 'tuna_trades.json'))
+        if is_whale:
+            json_files.append(os.path.join(self.data_dir, 'whale_trades.json'))
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, 'a') as f:
+                    f.write(json.dumps(trade_data) + '\n')
+            except Exception as e:
+                logger.error(f"Error writing to {json_file}: {e}")
     
     def process_trades(self, trades: List[Dict]):
         """
-        Process a list of trades, filtering for large ones
+        Process a list of trades, filtering and categorizing them
         
         Args:
             trades: List of trade dictionaries
         """
-        large_trades_found = 0
+        trades_found = 0
         
         for trade in trades:
             tx_hash = trade.get('transactionHash')
@@ -309,26 +394,30 @@ Trader Information:
             
             # Check if trade exceeds threshold
             if trade_value >= self.threshold:
-                large_trades_found += 1
+                trades_found += 1
                 wallet = trade.get('proxyWallet')
                 if wallet:
-                    logger.info(f"Found large trade: ${trade_value:,.2f} from wallet {wallet}")
+                    logger.info(f"Found trade: ${trade_value:,.2f} from wallet {wallet}")
                     
                     # Analyze trader history
                     trader_stats = self.analyze_trader(wallet)
                     
-                    # Log the trade and trader info
-                    self.log_large_trade(trade, trader_stats)
+                    # Log the trade and trader info to appropriate logs
+                    self.log_trade(trade, trader_stats)
         
-        # Log if no large trades were found
-        if large_trades_found == 0:
+        # Log if no qualifying trades were found
+        if trades_found == 0:
             logger.info(f"No transactions over ${self.threshold:,.2f} found in this batch")
     
     def run(self):
         """
         Main monitoring loop
         """
-        logger.info(f"Starting Polymarket monitor (threshold: ${self.threshold:,.2f})")
+        logger.info(f"Starting Polymarket Trade Monitor")
+        logger.info(f"Minimum trade threshold: ${self.threshold:,.2f}")
+        logger.info(f"Tuna trades: ${self.TUNA_MIN:,.2f} - ${self.TUNA_MAX:,.2f}")
+        logger.info(f"Whale trades: ${self.WHALE_MIN:,.2f}+")
+        logger.info(f"Unusual trader threshold: < {self.UNUSUAL_TRADER_THRESHOLD} previous trades")
         logger.info(f"Poll interval: {self.poll_interval} seconds")
         logger.info("Press Ctrl+C to stop")
         

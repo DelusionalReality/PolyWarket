@@ -46,19 +46,24 @@ docker-compose logs -f
 
 That's it! The monitor will:
 1. Check for new trades every 30 seconds
-2. Log any trade over $5,000 to console and `polymarket_trades.log`
-3. For each large trade, automatically analyze the trader's complete history
+2. Categorize and log trades to multiple files based on size and trader experience:
+   - **Main Log**: All trades over $5,000 → `polymarket_trades.log` / `trades.json`
+   - **Tuna Trades**: $5K-$100K → `tuna_trades.log` / `tuna_trades.json`
+   - **Whale Trades**: $100K+ → `whale_trades.log` / `whale_trades.json`
+   - **Unusual Trades**: From traders with < 10 previous trades → `unusual_trades.log` / `unusual_trades.json`
+3. For each qualifying trade, automatically analyze the trader's complete history
 4. Display market details including category and tags
-5. Save all data to `large_trades.json` for further analysis
-6. Log when no large trades are found in each polling cycle
+5. Log when no qualifying trades are found in each polling cycle
+
+**Note**: A single trade can appear in multiple logs (e.g., a $150K trade from a new trader appears in main, whale, and unusual logs)
 
 ## What You'll See
 
-### Large Trade Detected:
+### Trade Detected (Tuna Category):
 
 ```
 ================================================================================
-LARGE TRADE DETECTED: $7,500.00
+TRADE DETECTED: $7,500.00 [TUNA]
 ================================================================================
 Trade Details:
   - Transaction Hash: 0xabc123...
@@ -80,10 +85,22 @@ Trader Information:
 ================================================================================
 ```
 
-### No Large Trades:
+### Trade Detected (Whale + Unusual):
 
 ```
-2025-10-16 18:15:30,123 - INFO - No transactions over $5,000.00 found in this batch
+================================================================================
+TRADE DETECTED: $125,000.00 [WHALE + UNUSUAL]
+================================================================================
+Trader Information:
+  - Total Historical Trades: 8
+  - ...
+================================================================================
+```
+
+### No Qualifying Trades:
+
+```
+2025-10-17 18:15:30,123 - INFO - No transactions over $5,000.00 found in this batch
 ```
 
 ## Customization
@@ -103,8 +120,14 @@ Press `Ctrl+C`
 
 ## View Logs
 
-- **Human-readable**: `cat polymarket_trades.log`
-- **JSON format**: `cat large_trades.json`
+**Main Logs** (all trades):
+- Human-readable: `cat logs/polymarket_trades.log`
+- JSON format: `cat data/trades.json`
+
+**Category-Specific Logs**:
+- Tuna trades: `cat logs/tuna_trades.log` or `cat data/tuna_trades.json`
+- Whale trades: `cat logs/whale_trades.log` or `cat data/whale_trades.json`
+- Unusual traders: `cat logs/unusual_trades.log` or `cat data/unusual_trades.json`
 
 ## Need Help?
 
